@@ -92,7 +92,7 @@ def calculate_lsq(reading_queue):
 
 def calculate_angle(one, two):
     intermediate = ((one[0] * two[0]) + (one[1] * two[1])) / (np.linalg.norm(one) * np.linalg.norm(two))
-    if intermediate > 1:
+    if intermediate > 1 or intermediate < -1:
         intermediate = 1
     return math.acos(intermediate)
 
@@ -449,7 +449,7 @@ class Sketch:
         target_angle = math.fabs(target_position_vector.a)
 
         intermediate = ((target_offset[0] * hyp[0]) + (target_offset[1] * hyp[1])) / (magnitude(target_offset) * magnitude(hyp))
-        if intermediate > 1:
+        if intermediate > 1 or intermediate < -1:
             intermediate = 1
         angle = math.acos(intermediate)
 
