@@ -6,10 +6,7 @@ import numpy as np
 
 from geometry_msgs.msg import TwistStamped
 from std_msgs.msg import String
-from rx.subject import Subject
-from dragonfly_messages.msg import LatLon, PositionVector
-from dragonfly_messages.msg import SemaphoreToken
-
+from dragonfly_messages.msg import LatLon, PositionVector, SemaphoreToken
 from .ActionState import ActionState
 
 EARTH_CIRCUMFERENCE = 40008000
@@ -19,26 +16,27 @@ def position_equals(p1, p2):
 
 class Drone:
 
-    def __init__(self, threshold, latest_gradient):
+    def __init__(self, threshold, latest_gradient, distance_sqrt_lambda):
         self.threshold = threshold
         self.position_reading_queue = []
         self.gradient = latest_gradient
         self.crossing_point = None
         self.before_crossing = None
         self.position = None
+        self.distance_sqrt_lambda = distance_sqrt_lambda
 
 
-    def update(self, position):
+    def update(self, position, partner_drone):
 
-        if len(self.position_reading_queue) == 0 or not position_equals(position, self.position_reading_queue[-1]):
+        if position.value > 420 and (len(self.position_reading_queue) == 0 or not position_equals(position, self.position_reading_queue[-1])):
             self.position_reading_queue.append(position)
 
-        while len(self.position_reading_queue) > 3:
+        while len(self.position_reading_queue) > 3 and magnitude(difference_in_meters(self.position_reading_queue[0], self.position_reading_queue[-1])) > self.distance_sqrt_lambda:
             self.position_reading_queue.pop(0)
 
-        if self.position is not None and ((position.value > self.threshold) == (self.position.value <= self.threshold)) and len(self.position_reading_queue) == 3:
+        if self.position is not None and ((position.value > self.threshold) == (self.position.value <= self.threshold)) and len(self.position_reading_queue) >= 3:
             self.crossing_point = position if math.fabs(position.value - self.threshold) > math.fabs(self.position.value - self.threshold) else self.position
-            self.gradient = calculate_lsq(self.position_reading_queue)
+            self.gradient = calculate_lsq(self.position_reading_queue + partner_drone.position_reading_queue)
 
             self.position = position
 
@@ -68,22 +66,27 @@ class ReadingPosition:
         return self.latitude == other.latitude and self.longitude == other.longitude and self.value == other.value
 
 def calculate_lsq(reading_queue):
-    matrix22 = [difference_in_meters(reading_queue[0], reading_queue[1]),
-                difference_in_meters(reading_queue[2], reading_queue[1])]
+    if len(reading_queue) < 3:
+        raise ValueError("At least 3 readings are required")
 
-    matrix22[0][1] = matrix22[0][1] / (matrix22[0][0] + 1e-9)
-    matrix22[1][1] = matrix22[1][1] / (matrix22[1][0] + 1e-9)
+    n = len(reading_queue)
+    matrix = []
+    values = []
 
-    values = [reading_queue[0].value - reading_queue[1].value,
-              reading_queue[2].value - reading_queue[1].value]
+    for i in range(n):
+        # if i == 1:
+        #     continue
 
-    values[0] = values[0] / (matrix22[0][0] + 1e-9)
-    values[1] = values[1] / (matrix22[1][0] + 1e-9)
+        diff = difference_in_meters(reading_queue[i], reading_queue[1])
+        # diff[1] = diff[1] / (diff[0] + 1e-9)
 
-    matrix22[0][0] = 1
-    matrix22[1][0] = 1
+        value = reading_queue[i].value - reading_queue[1].value
+        # value = value / (diff[0] + 1e-9)
+        values.append(value)
+        # diff[0] = 1
+        matrix.append(diff)
 
-    m = np.linalg.lstsq(matrix22, values, rcond=None)[0]
+    m = np.linalg.lstsq(matrix, values, rcond=None)[0]
 
     return unitary(m)
 
@@ -160,14 +163,14 @@ class Sketch:
     INITIAL_ORIENTATION = True
 
     def __init__(self, distance_sqrt_lambda, lambda_value, threshold, starting_direction=None, latest_gradient=None):
-        self.drone1 = Drone(threshold, latest_gradient)
-        self.drone2 = Drone(threshold, latest_gradient)
-
         self.distance_sqrt_lambda = distance_sqrt_lambda
         self.distance_lambda = self.distance_sqrt_lambda * lambda_value / (math.sqrt(lambda_value))
         self.lambda_value = lambda_value
         self.threshold = threshold
         self.starting_direction = starting_direction
+
+        self.drone1 = Drone(threshold, latest_gradient, distance_sqrt_lambda)
+        self.drone2 = Drone(threshold, latest_gradient, distance_sqrt_lambda)
 
         self.encountered = False
         self.armed = False
@@ -176,15 +179,16 @@ class Sketch:
         self.latest_crossing_point = None
         self.latest_point_before_crossing = None
         self.latest_gradient = latest_gradient
+        self.latest_reading_queue = []
 
         self.flip = False
 
     def update(self, d1, d2):
 
-        update_result = self.drone2.update(d2)
+        update_result = self.drone2.update(d2, self.drone1)
         if update_result is not None:
             [self.latest_crossing_point, self.latest_point_before_crossing, self.latest_gradient] = update_result
-        update_result = self.drone1.update(d1)
+        update_result = self.drone1.update(d1, self.drone2)
         if update_result is not None:
             [self.latest_crossing_point, self.latest_point_before_crossing, self.latest_gradient] = update_result
 
