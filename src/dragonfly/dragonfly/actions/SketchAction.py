@@ -54,10 +54,11 @@ class Drone:
 
 class ReadingPosition:
 
-    def __init__(self, latitude, longitude, value):
+    def __init__(self, latitude, longitude, value, oracle_gradient):
         self.latitude = latitude
         self.longitude = longitude
         self.value = value
+        self.oracle_gradient = oracle_gradient
 
     def __str__(self):
         return f"{self.latitude} {self.longitude}, v:{self.value}"
@@ -597,7 +598,7 @@ class SketchAction:
             time_delta = co2_timestamp[1] - position_timestamp[1]
             # print(time_delta.total_seconds())
             updated_position = latlon_plus_meters(position, (time_delta.total_seconds() * np.array(velocity)))
-            return ReadingPosition(updated_position.latitude, updated_position.longitude, co2.ppm)
+            return ReadingPosition(updated_position.latitude, updated_position.longitude, co2.ppm, co2.gradient)
 
         return co2_subject.pipe(
             ops.with_latest_from(position_subject, velocity_subject),

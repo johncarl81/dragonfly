@@ -20,3 +20,5 @@ bool zeroing
 int32 zeroing_count
 int32 zeroing_index
 bool warming
+
+float64[2] gradient

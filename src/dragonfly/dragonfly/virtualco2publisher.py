@@ -8,10 +8,19 @@ import numpy as np
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import NavSatFix
-from dragonfly_messages.msg import CO2
+from dragonfly_messages.msg import CO2, LatLon
 from dragonfly_messages.srv import SetupPlumes
 from std_msgs.msg import String
 
+
+def createLatLon(latitude, longitude):
+    return LatLon(latitude=latitude, longitude=longitude, relative_altitude=0.0)
+
+def unitary(vector):
+    vector_magnitude = np.linalg.norm(vector)
+    if vector_magnitude == 0 and vector[0] == 0:
+        return vector
+    return np.array([vector[0] / vector_magnitude, vector[1] / vector_magnitude])
 
 class VirtualCO2Publisher:
 
@@ -47,6 +56,19 @@ class VirtualCO2Publisher:
         else:
             return 420.0 + value
 
+    def calculate_co2_xy(self, latitude, longitude):
+        return self.calculateCO2(createLatLon(latitude, longitude))
+
+    def calculateGradient(self, position, delta=1e-6):
+        lat = position.latitude
+        lon = position.longitude
+
+        # Numerical differentiation
+        dlat = (self.calculate_co2_xy(lat + delta, lon) - self.calculate_co2_xy(lat - delta, lon)) / (2 * delta)
+        dlon = (self.calculate_co2_xy(lat, lon + delta) - self.calculate_co2_xy(lat, lon - delta)) / (2 * delta)
+
+        return unitary([dlon, dlat])
+
     def rotate_vector(self, vector, angle):
         rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)],
                                     [np.sin(angle), np.cos(angle)]])
@@ -57,6 +79,8 @@ class VirtualCO2Publisher:
         if len(self.plumes) > 0:
             ppm = self.calculateCO2(data)
 
+            gradient = self.calculateGradient(data)
+
             self.pub.publish(CO2(ppm=ppm,
                                  average_temp=55.0,
                                  humidity=0.0,
@@ -64,7 +88,8 @@ class VirtualCO2Publisher:
                                  atmospheric_pressure=800,
                                  detector_temp=55.0,
                                  source_temp=55.0,
-                                 status=CO2.NO_ERROR))
+                                 status=CO2.NO_ERROR,
+                                 gradient=gradient))
 
     def publish(self):
         self.node.create_subscription(NavSatFix, f"{self.id}/mavros/global_position/global",
