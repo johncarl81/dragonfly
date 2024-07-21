@@ -280,12 +280,12 @@ class Sketch:
         # print(f"angle_to: {angle_to(self.target_position_vector, self.d1_before_crossing, self.d1)} {i * a} {polygon_facing_crossing()}")
 
         #   while neither robot has crossed the boundary do
-        if self.inside(drone1) == was_inside and self.inside(drone2) == was_inside:
+        while self.inside(drone1) == was_inside and self.inside(drone2) == was_inside:
             print("back to point")
             #       D1 moves towards point p taking steps of length λ.
             #       D2 moves to closest point from it that is √λ distance away from D1 and orthogonal to D1’s direction.
             #   if self.latest_point_before_crossing is not None:
-            direction_back = difference_in_meters(self.latest_point_before_crossing, drone1.position)
+            direction_back = unitary(difference_in_meters(self.latest_point_before_crossing, drone1.position))
             self.target_position_vector = self.forward_by_vector(self.drone1, self.drone2, direction_back)
             yield from self.until(self.target_position_vector, lambda: self.moved_forward_lambda(self.target_position_vector, self.drone1, self.drone2))
         #   if D2 crossed the boundary then
